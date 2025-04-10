@@ -1,3 +1,9 @@
+# Bypass execution restrictions
+$Env:SEE_MASK_NOZONECHECKS = 1
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+# Disable script logging
+$Env:PSModulePath = [System.Environment]::GetEnvironmentVariable("PSModulePath", "Machine")
 # Force TLS 1.2 silently
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
